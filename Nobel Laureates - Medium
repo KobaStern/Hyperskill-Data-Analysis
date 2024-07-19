@@ -1,0 +1,162 @@
+import pandas as pd
+import os
+import requests
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+
+if __name__ == '__main__':
+    if not os.path.exists('../Data'):
+        os.mkdir('../Data')
+
+    if 'Nobel_laureates.json' not in os.listdir('../Data'):
+        sys.stderr.write("[INFO] Dataset is loading.\n")
+        url = "https://www.dropbox.com/s/m6ld4vaq2sz3ovd/nobel_laureates.json?dl=1"
+        r = requests.get(url, allow_redirects=True)
+        open('../Data/Nobel_laureates.json', 'wb').write(r.content)
+        sys.stderr.write("[INFO] Loaded.\n")
+
+    data = pd.read_json('../Data/Nobel_laureates.json')
+
+    has_duplicates = data.duplicated().any()
+
+    df = data.dropna(subset=["gender"])
+
+    df = df.reset_index(drop=True)
+
+    subset_df = df[['country', 'name']].head(20)
+
+    subset_dict = subset_df.to_dict()
+
+
+    def extract_country(place):
+        if isinstance(place, str) and ',' in place:
+            return place.split(',')[-1].strip()
+        return np.nan
+
+
+    df['extracted_country'] = df['place_of_birth'].apply(extract_country)
+
+    df['born_in'] = df['born_in'].replace('', np.nan)
+    df['born_in'] = df['born_in'].fillna(df['extracted_country'])
+    df = df.dropna(subset=['born_in'])
+
+    df = df.reset_index(drop=True)
+
+    country_mapping = {
+        'US': 'USA',
+        'United States': 'USA',
+        'U.S.': 'USA',
+        'United Kingdom': 'UK'
+    }
+
+    df['born_in'] = df['born_in'].replace(country_mapping)
+
+    # Create the list of 'born_in' values
+    result_list = df['born_in'].tolist()
+
+    list = df['born_in'].tolist()
+
+    tf = df['date_of_birth'].str.extract(r'(\b\d{4}\b)')
+    df['year_born'] = tf.apply(lambda x: ''.join(x.dropna()), axis=1).astype(float)
+
+    df['age_of_winning'] = df['year'] - df['year_born']
+
+    df = df.astype({"age_of_winning": "int", "year_born": "int"})
+
+    country_counts = df['born_in'].value_counts()
+    countries_to_keep = country_counts[country_counts >= 25].index
+    df['born_in'] = df['born_in'].apply(lambda x: x if country_counts[x] >= 25 else "Other countries")
+    country_counts = df['born_in'].value_counts().sort_values(ascending=False)
+    total_laureates = len(df)
+    country_percentages = (country_counts / total_laureates) * 100
+
+
+   “”” plt.figure(figsize=(12, 12))
+    explode = [0.0, 0.0, 0.0, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
+    colors = ['blue', 'orange', 'red', 'yellow', 'green', 'pink', 'brown', 'cyan', 'purple']
+
+
+    def make_autopct(values):
+        def my_autopct(pct):
+            total = sum(values)
+            val = int(round(pct * total / 100.0))
+            return f'{pct:.2f}%\n({val:d})'
+
+        return my_autopct
+
+
+    plt.pie(country_counts.values,
+            labels=country_percentages.index,
+            autopct=make_autopct(country_counts.values),
+            startangle=0,
+            counterclock=True,
+            explode=explode,
+            colors=colors)
+
+    plt.show()
+
+
+    def make_autopct(values):
+        def my_autopct(pct):
+            total = sum(values)
+            val = int(round(pct * total / 100.0))
+            return f'{pct:.2f}%\n({val:d})'
+
+        return my_autopct”””
+
+
+
+
+    df = df.dropna(subset=['category', 'gender'])
+    df = df[df['category'] != '']
+
+
+
+    “””
+    gender_count = df.groupby(['category', 'gender']).size().unstack()
+
+    x_axis = np.arange(len(gender_count))
+
+    plt.figure(figsize=(10, 10))
+
+    plt.bar(x_axis - 0.2, gender_count['male'],
+            width=0.4, label='Males', color='blue')
+    plt.bar(x_axis + 0.2, gender_count['female'],
+            width=0.4, label='Females', color='crimson')
+
+    plt.xticks(x_axis, gender_count.index, fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.xlabel('Category', fontsize=14)
+    plt.ylabel('Nobel Laureates count', fontsize=14)
+    plt.title('Gender Distribution of Nobel Laureates by Category', fontsize=20)
+
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()”””
+
+my_labels = ['Chemistry', 'Economics', 'Literature', 'Peace', 'Physics', 'Physiology or Medicine', 'All categories']
+
+data = [df[df['category'] == cat]['age_of_winning'].values for cat in my_labels[:-1]]
+data.append(df['age_of_winning'].values)  # Add data for all categories
+
+
+plt.figure(figsize=(12, 8))
+
+plt.boxplot(data, labels=my_labels, showmeans=True)
+
+plt.xlabel('Category', fontsize=14)
+plt.ylabel('Age of Winning', fontsize=14)
+plt.title('Ages of Nobel Prize Winners by Category', fontsize=20)
+
+plt.xticks(rotation=0, ha='right')
+
+
+plt.tight_layout()
+
+plt.show()
+
+
+
+
