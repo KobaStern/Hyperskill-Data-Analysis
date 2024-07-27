@@ -1,0 +1,89 @@
+import pandas as pd
+import requests
+import os
+
+if __name__ == '__main__':
+
+    if not os.path.exists('../Data'):
+        os.mkdir('../Data')
+
+    # Download data if it is unavailable.
+    if ('A_office_data.xml' not in os.listdir('../Data') and
+        'B_office_data.xml' not in os.listdir('../Data') and
+        'hr_data.xml' not in os.listdir('../Data')):
+        print('A_office_data loading.')
+        url = "https://www.dropbox.com/s/jpeknyzx57c4jb2/A_office_data.xml?dl=1"
+        r = requests.get(url, allow_redirects=True)
+        open('../Data/A_office_data.xml', 'wb').write(r.content)
+        print('Loaded.')
+
+        print('B_office_data loading.')
+        url = "https://www.dropbox.com/s/hea0tbhir64u9t5/B_office_data.xml?dl=1"
+        r = requests.get(url, allow_redirects=True)
+        open('../Data/B_office_data.xml', 'wb').write(r.content)
+        print('Loaded.')
+
+        print('hr_data loading.')
+        url = "https://www.dropbox.com/s/u6jzqqg1byajy0s/hr_data.xml?dl=1"
+        r = requests.get(url, allow_redirects=True)
+        open('../Data/hr_data.xml', 'wb').write(r.content)
+        print('Loaded.')
+
+        # All data in now loaded to the Data folder.
+
+    # write your code here
+    a_office_data = pd.read_xml('../Data/A_office_data.xml')
+    b_office_data = pd.read_xml('../Data/B_office_data.xml')
+    hr_data = pd.read_xml('../Data/hr_data.xml')
+
+    a_office_data.index = 'A' + a_office_data['employee_office_id'].astype(str)
+    b_office_data.index = 'B' + b_office_data['employee_office_id'].astype(str)
+    hr_data.index = hr_data['employee_id']
+
+    office_data = pd.concat([a_office_data, b_office_data])
+
+    merged_data = office_data.merge(hr_data, left_index=True, right_index=True, how='inner', indicator=True)
+
+    columns_to_drop = ['employee_office_id', '_merge']
+    merged_data = merged_data.drop(columns=[col for col in columns_to_drop if col in merged_data.columns])
+
+    merged_data = merged_data.sort_index()
+
+    departments_list = merged_data.sort_values('average_monthly_hours', ascending=False)['Department'].iloc[
+                       :10].tolist()
+
+    project_sum = merged_data[(merged_data['Department'] == 'IT') & (merged_data['salary'] == 'low')][
+        'number_project'].sum()
+
+    result_list = merged_data.loc[['A4', 'B7064', 'A3033'], ['last_evaluation', 'satisfaction_level']].values.tolist()
+
+    def count_bigger_5(series):
+        return (series > 5).sum()
+
+    metrics = merged_data.groupby('left').agg({
+        'number_project': [('median', 'median'),
+                           ('count_bigger_5', count_bigger_5)],
+        'time_spend_company': [('mean', 'mean'),
+                               ('median', 'median')],
+        'Work_accident': ('mean', 'mean'),
+        'last_evaluation': [('mean', 'mean'),
+                            ('std', 'std')]
+    })
+
+    metrics_rounded = metrics.round(2)
+
+    metrics_dict = metrics_rounded.to_dict()
+
+    df = merged_data
+
+    pv_1 = df.pivot_table(index='Department', columns=['left', 'salary'], values='average_monthly_hours',
+                          aggfunc='median')
+    pv_1_filtered = pv_1.loc[(pv_1[0]['low'] > pv_1[0]['high']) | (pv_1[1]['high'] > pv_1[1]['low'])]
+
+    pv_2 = df.pivot_table(index='time_spend_company', columns='promotion_last_5years',
+                          values=['last_evaluation', 'satisfaction_level'],
+                          aggfunc=['max', 'mean', 'min']).round(2)
+    pv_2_filtered = pv_2[pv_2['mean']['last_evaluation'][0] > pv_2['mean']['last_evaluation'][1]]
+
+    print(pv_1_filtered.to_dict())
+    print(pv_2_filtered.to_dict())
